@@ -12,32 +12,34 @@ Finder thumbnails, and a 3D preview you can spin when you press Space.</p>
 - **Thumbnails.** Finder icons, column view and Get Info show the model itself, not a blank document.
 - **Space-bar preview.** An orbitable 3D view with the model's size and voxel count. Drag to turn it, scroll or pinch to zoom.
 - **Whole scenes.** It reads MagicaVoxel's scene graph: multiple models, groups, rotations, mirroring and the palette. Hidden layers and hidden objects are left out.
-- **Light on the battery.** Faces are greedy-meshed, and a model used many times is meshed once. The preview redraws only while you interact with it and uses no CPU while it sits open. Thumbnails take about 20–60 ms each, and Quick Look caches them.
+- **Light on the battery.** The preview redraws only while you drag it and uses no CPU while it sits open. Thumbnails render on the low-power GPU, and Quick Look caches them. Thumbnailing 306 real-world files took 2.3 s of CPU in total and 134 MB at peak. Models are greedy-meshed, with only their occupied voxels stored, and each model is meshed once however many times it's placed.
 - **Sandboxed.** Both extensions only read the file they're given.
 
 Requires macOS 14 or later.
 
 ## Install
 
-Build from source. You need Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
-
 ```sh
-git clone https://github.com/Springfolk/voxlook.git
-cd voxlook
-make install        # builds, copies VoxLook.app to /Applications, registers the extensions
+curl -fsSL https://raw.githubusercontent.com/Springfolk/voxlook/main/install.sh | bash
 ```
 
-Then select a `.vox` file in Finder and press Space. If nothing happens, open VoxLook once and check that both extensions are enabled in **System Settings → General → Login Items & Extensions → Quick Look**.
+This downloads the latest release (universal, ~750 KB) into `/Applications`, or `~/Applications` if you can't write there. It registers both extensions, clears Quick Look's caches and relaunches Finder so files that already had a plain icon pick up their thumbnails. Run it again to update. To remove VoxLook:
 
-By default the build is signed ad hoc, which is enough on your own Mac. To sign with your team, create `Config/Local.xcconfig`:
+```sh
+curl -fsSL https://raw.githubusercontent.com/Springfolk/voxlook/main/install.sh | bash -s -- --uninstall
+```
+
+The download is signed ad hoc, not notarized. It runs because `curl` doesn't quarantine files the way a browser does, so a `VoxLook.zip` you open from a browser download will be blocked by Gatekeeper.
+
+### From source
+
+You need Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`). `make install` builds the app and installs it through the same script; `make uninstall` removes it. To sign with your own team instead of ad hoc, create `Config/Local.xcconfig`:
 
 ```
 DEVELOPMENT_TEAM = ABCDE12345
 CODE_SIGN_IDENTITY = Apple Development
 CODE_SIGN_STYLE = Automatic
 ```
-
-`make uninstall` removes it again.
 
 ## Command line
 

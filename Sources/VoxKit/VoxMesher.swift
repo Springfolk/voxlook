@@ -17,9 +17,12 @@ extension VoxModel {
     /// voxels are dropped, and coplanar same-colour faces merge into one quad.
     public func mesh(palette: [VoxColor]) -> VoxMesh {
         var mesh = VoxMesh()
-        let size = [sizeX, sizeY, sizeZ]
-        let stride = [1, sizeX, sizeX * sizeY]
-        let half = size.map { Float($0) / 2 }
+        guard voxelCount > 0 else { return mesh }
+        // Walk the stored grid only; `offset` maps grid coordinates to box-centred ones.
+        let size = [extent.x, extent.y, extent.z]
+        let stride = [1, extent.x, extent.x * extent.y]
+        let box = [sizeX, sizeY, sizeZ]
+        let offset = (0..<3).map { Float(origin[$0]) - Float(box[$0]) / 2 }
 
         cells.withUnsafeBufferPointer { cells in
             for d in 0..<3 {
@@ -58,9 +61,9 @@ extension VoxModel {
                                 for y in j..<j + h { for x in i..<i + w { mask[x + y * su] = 0 } }
 
                                 var corner = SIMD3<Float>(repeating: 0)
-                                corner[d] = plane - half[d]
-                                corner[u] = Float(i) - half[u]
-                                corner[v] = Float(j) - half[v]
+                                corner[d] = plane + offset[d]
+                                corner[u] = Float(i) + offset[u]
+                                corner[v] = Float(j) + offset[v]
                                 var du = SIMD3<Float>(repeating: 0), dv = SIMD3<Float>(repeating: 0)
                                 du[u] = Float(w)
                                 dv[v] = Float(h)

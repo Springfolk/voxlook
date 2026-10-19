@@ -81,6 +81,34 @@ def main():
     with open(os.path.join(ROOT, 'App', 'Assets.xcassets', 'Contents.json'), 'w') as f:
         json.dump({'info': info}, f, indent=2)
     icon.save(os.path.join(ROOT, 'docs', 'icon.png'))
+    write_document_icon(Image.open(render).convert('RGBA'))
+
+
+def document(size, model):
+    """A page with a folded corner and the model on it, on the macOS doc-icon grid."""
+    s = size / 1024
+    page = Image.new('RGBA', (size, size))
+    left, top, right, bottom, fold = 170 * s, 60 * s, 854 * s, 964 * s, 230 * s
+    shape = [(left, top), (right - fold, top), (right, top + fold), (right, bottom), (left, bottom)]
+    shadow = Image.new('L', (size, size))
+    ImageDraw.Draw(shadow).polygon([(x, y + 10 * s) for x, y in shape], fill=90)
+    page.putalpha(shadow.filter(ImageFilter.GaussianBlur(14 * s)))
+    d = ImageDraw.Draw(page)
+    d.polygon(shape, fill=(250, 250, 252, 255))
+    d.polygon([(right - fold, top), (right - fold, top + fold), (right, top + fold)], fill=(222, 224, 230, 255))
+    m = int(560 * s)
+    page.alpha_composite(model.resize((m, m), Image.LANCZOS), (int((size - m) / 2), int(300 * s)))
+    return page
+
+
+def write_document_icon(model):
+    iconset = os.path.join(ROOT, '.build', 'VoxDocument.iconset')
+    os.makedirs(iconset, exist_ok=True)
+    for pt in (16, 32, 128, 256, 512):
+        for scale in (1, 2):
+            name = f'icon_{pt}x{pt}{"@2x" if scale == 2 else ""}.png'
+            document(pt * scale, model).save(os.path.join(iconset, name))
+    subprocess.run(['iconutil', '-c', 'icns', iconset, '-o', os.path.join(ROOT, 'App', 'VoxDocument.icns')], check=True)
 
 
 if __name__ == '__main__':

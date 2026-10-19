@@ -8,22 +8,49 @@ public struct VoxColor: Hashable, Sendable {
     }
 }
 
-/// One model: a dense grid of palette indices (0 = empty).
+/// One model: palette indices (0 = empty) on a `sizeX × sizeY × sizeZ` box.
+///
+/// Only the occupied part of the box is stored, as a dense grid starting at
+/// `origin` — models are often 256³ boxes with a small object inside.
 public struct VoxModel: Sendable {
     public let sizeX, sizeY, sizeZ: Int
-    /// Indexed `x + y * sizeX + z * sizeX * sizeY`.
-    public var cells: [UInt8]
+    /// Corner of the stored grid within the model box.
+    public private(set) var origin: SIMD3<Int>
+    /// Extent of the stored grid.
+    public private(set) var extent: SIMD3<Int>
+    /// Indexed `x + y * extent.x + z * extent.x * extent.y`, relative to `origin`.
+    public private(set) var cells: [UInt8]
     public private(set) var voxelCount = 0
 
+    /// An empty model storing its whole box.
     public init(sizeX: Int, sizeY: Int, sizeZ: Int) {
         self.sizeX = sizeX; self.sizeY = sizeY; self.sizeZ = sizeZ
+        origin = .zero
+        extent = SIMD3(sizeX, sizeY, sizeZ)
         cells = [UInt8](repeating: 0, count: sizeX * sizeY * sizeZ)
     }
 
-    /// Fills from packed `XYZI` records, dropping out-of-bounds voxels.
+    /// Fills from packed `XYZI` records, dropping out-of-bounds voxels and
+    /// storing only their bounding box.
     init(sizeX: Int, sizeY: Int, sizeZ: Int, xyzi: UnsafeBufferPointer<UInt8>) {
-        self.init(sizeX: sizeX, sizeY: sizeY, sizeZ: sizeZ)
-        let sxy = sizeX * sizeY
+        self.sizeX = sizeX; self.sizeY = sizeY; self.sizeZ = sizeZ
+        var lo = SIMD3(sizeX, sizeY, sizeZ), hi = SIMD3<Int>(repeating: -1)
+        var i = 0
+        while i + 3 < xyzi.count {
+            let p = SIMD3(Int(xyzi[i]), Int(xyzi[i + 1]), Int(xyzi[i + 2]))
+            if xyzi[i + 3] != 0, p.x < sizeX, p.y < sizeY, p.z < sizeZ {
+                lo = pointwiseMin(lo, p); hi = pointwiseMax(hi, p)
+            }
+            i += 4
+        }
+        guard hi.x >= 0 else {
+            origin = .zero; extent = .zero; cells = []
+            return
+        }
+        origin = lo
+        extent = hi &- lo &+ 1
+        cells = [UInt8](repeating: 0, count: extent.x * extent.y * extent.z)
+        let (ex, exy) = (extent.x, extent.x * extent.y)
         var count = 0
         cells.withUnsafeMutableBufferPointer { cells in
             var i = 0
@@ -31,7 +58,7 @@ public struct VoxModel: Sendable {
                 let x = Int(xyzi[i]), y = Int(xyzi[i + 1]), z = Int(xyzi[i + 2]), c = xyzi[i + 3]
                 i += 4
                 guard x < sizeX, y < sizeY, z < sizeZ, c != 0 else { continue }
-                let k = x + y * sizeX + z * sxy
+                let k = (x - lo.x) + (y - lo.y) * ex + (z - lo.z) * exy
                 if cells[k] == 0 { count += 1 }
                 cells[k] = c
             }
@@ -39,10 +66,17 @@ public struct VoxModel: Sendable {
         voxelCount = count
     }
 
+    /// In model-box coordinates. Writes must fall inside the stored grid.
     public subscript(x: Int, y: Int, z: Int) -> UInt8 {
-        get { cells[x + y * sizeX + z * sizeX * sizeY] }
+        get {
+            let p = SIMD3(x, y, z) &- origin
+            guard all(p .>= 0), all(p .< extent) else { return 0 }
+            return cells[p.x + p.y * extent.x + p.z * extent.x * extent.y]
+        }
         set {
-            let i = x + y * sizeX + z * sizeX * sizeY
+            let p = SIMD3(x, y, z) &- origin
+            precondition(all(p .>= 0) && all(p .< extent), "write outside the stored grid")
+            let i = p.x + p.y * extent.x + p.z * extent.x * extent.y
             voxelCount += (cells[i] == 0 ? 1 : 0) - (newValue == 0 ? 1 : 0)
             cells[i] = newValue
         }

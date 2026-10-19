@@ -11,4 +11,4 @@
 
 Flow: `VoxFile(data:)` → `instances()` → per used model `mesh()` (cached per model index) → one `SCNGeometry` shared by every instance (mirrored instances get a double-sided copy) → nodes under a root rotated −90° about X (Z-up → Y-up).
 
-Performance choices: dense `UInt8` grid per model; greedy meshing by colour; 16-bit indices when ≤ 65 535 vertices; one Metal device per process; `SCNView` with `rendersContinuously = false`, low-power GPU, no shadows.
+Performance choices: dense `UInt8` grid cropped to each model's occupied box; greedy meshing by colour; 16-bit indices when ≤ 65 535 vertices; one low-power Metal device and one `SCNRenderer` per process, scenes of the last 4 files cached (Finder asks for several sizes per file); `SCNView` with `rendersContinuously = false`, low-power GPU, no shadows.

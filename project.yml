@@ -14,8 +14,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.1.0"
+    CURRENT_PROJECT_VERSION: "2"
     ENABLE_HARDENED_RUNTIME: YES
     DEAD_CODE_STRIPPING: YES
 
@@ -43,18 +43,22 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: VoxLook
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         LSApplicationCategoryType: public.app-category.graphics-design
         NSHumanReadableCopyright: "MIT License"
         CFBundleDocumentTypes:
           - CFBundleTypeName: MagicaVoxel Model
             CFBundleTypeRole: Viewer
             LSHandlerRank: Alternate
+            CFBundleTypeIconFile: VoxDocument
             LSItemContentTypes: [com.ephtracy.vox]
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: com.ephtracy.vox
             UTTypeDescription: MagicaVoxel Model
             UTTypeConformsTo: [public.data]  # not public.3d-content: Apple's SceneKit thumbnailer would claim it
             UTTypeReferenceURL: https://ephtracy.github.io
+            UTTypeIconFile: VoxDocument  # else Finder shows "?" or a generic audio icon (.vox is also Dialogic audio)
             UTTypeTagSpecification:
               public.filename-extension: [vox]
 
@@ -77,6 +81,8 @@ targets:
       path: PreviewExtension/Info.plist
       properties:
         CFBundleDisplayName: VoxLook Preview
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.quicklook.preview
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).PreviewViewController
@@ -103,6 +109,8 @@ targets:
       path: ThumbnailExtension/Info.plist
       properties:
         CFBundleDisplayName: VoxLook Thumbnail
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.quicklook.thumbnail
           NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ThumbnailProvider

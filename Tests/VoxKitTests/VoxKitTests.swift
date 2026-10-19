@@ -120,6 +120,24 @@ final class MesherTests: XCTestCase {
         XCTAssertEqual(mesh.positions.max(), 0.5)
     }
 
+    func testSparseModelStoresOnlyItsBoundingBox() throws {
+        var w = VoxWriter()
+        w.model(size: (256, 256, 256), voxels: [(10, 20, 30, 1), (11, 20, 30, 1)])
+        let m = try VoxFile(data: w.data).models[0]
+        XCTAssertEqual(m.extent, SIMD3(2, 1, 1))
+        XCTAssertEqual(m.cells.count, 2)
+        XCTAssertEqual(m[11, 20, 30], 1)
+        XCTAssertEqual(m[0, 0, 0], 0)
+        // Geometry still sits where the voxels are in the centred box.
+        let mesh = m.mesh(palette: VoxPalette.default)
+        let xs = stride(from: 0, to: mesh.positions.count, by: 3).map { mesh.positions[$0] }
+        let zs = stride(from: 2, to: mesh.positions.count, by: 3).map { mesh.positions[$0] }
+        XCTAssertEqual(xs.min(), 10 - 128)
+        XCTAssertEqual(xs.max(), 12 - 128)
+        XCTAssertEqual(zs.min(), 30 - 128)
+        XCTAssertEqual(mesh.triangleCount, 12)
+    }
+
     func testSameColourFacesMerge() {
         var m = VoxModel(sizeX: 4, sizeY: 4, sizeZ: 4)
         for x in 0..<4 { for y in 0..<4 { for z in 0..<4 { m[x, y, z] = 7 } } }

@@ -9,10 +9,9 @@ final class ThumbnailProvider: QLThumbnailProvider {
     override func provideThumbnail(for request: QLFileThumbnailRequest,
                                    _ handler: @escaping (QLThumbnailReply?, Error?) -> Void) {
         do {
-            let voxScene = VoxScene(file: try VoxFile(contentsOf: request.fileURL))
             let side = min(request.maximumSize.width, request.maximumSize.height)
             let pixels = CGSize(width: side * request.scale, height: side * request.scale)
-            guard let image = VoxThumbnailRenderer.render(voxScene, pixelSize: pixels) else {
+            guard let image = try VoxThumbnailRenderer.render(contentsOf: request.fileURL, pixelSize: pixels) else {
                 handler(nil, CocoaError(.fileReadCorruptFile))
                 return
             }
