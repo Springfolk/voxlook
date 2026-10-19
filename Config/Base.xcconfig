@@ -1,0 +1,12 @@
+// Shared build settings. Signs ad hoc by default so anyone can build;
+// put your team in Config/Local.xcconfig (git-ignored) to sign properly:
+//
+//   DEVELOPMENT_TEAM = ABCDE12345
+//   CODE_SIGN_IDENTITY = Apple Development
+//   CODE_SIGN_STYLE = Automatic
+
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"
