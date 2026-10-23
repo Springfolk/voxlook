@@ -17,4 +17,5 @@
 - **`CSImportExtension` (`com.apple.spotlight.import`) is a no-op on macOS** (Apple docs + DTS); it registers but `update` is never called. Use a classic `.mdimporter` in `Contents/Library/Spotlight`.
 - **XcodeGen `bundle` targets get no `CFBundleExecutable`**; without it the importer silently never loads. It's set in `project.yml`.
 - **`mdimport -t -d2 file.vox`** tests it ("with plugIn …" + attributes); **`mdimport -L`** lists known importers.
-- **mds discovers app-embedded importers lazily and caches them** (one path per bundle ID, kept after the file's deleted). Two registered copies of the app (e.g. the Xcode build product) can win over `/Applications`; `make install` unregisters the build product.
+- **mds didn't discover the app-embedded importer** (waited 10+ min, fresh bundle ID, app launched). A symlink in `~/Library/Spotlight` + `mdimport -r` is picked up at once and resolves to the app's copy; `install.sh` makes it, `--uninstall` removes it.
+- **mds caches importer paths** (one per bundle ID, kept after the file's deleted). Two registered copies of the app (e.g. the Xcode build product) can win over `/Applications`; `make install`/`make dist` unregister their build products.

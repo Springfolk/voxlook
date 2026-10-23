@@ -25,7 +25,7 @@ Requires macOS 14 or later.
 curl -fsSL https://raw.githubusercontent.com/Springfolk/voxlook/main/install.sh | bash
 ```
 
-This downloads the latest release (universal, ~1.4 MB) into `/Applications`, or `~/Applications` if you can't write there. It registers the extensions and the Spotlight importer, clears Quick Look's caches and relaunches Finder so files that already had a plain icon pick up their thumbnails. Run it again to update. To remove VoxLook:
+This downloads the latest release (universal, ~1.4 MB) into `/Applications`, or `~/Applications` if you can't write there. It registers the extensions and the Spotlight importer (linked from `~/Library/Spotlight`), clears Quick Look's caches and relaunches Finder so files that already had a plain icon pick up their thumbnails. Run it again to update. To remove VoxLook:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Springfolk/voxlook/main/install.sh | bash -s -- --uninstall
@@ -69,7 +69,6 @@ let image = try VoxThumbnailRenderer.render(contentsOf: url, pixelSize: CGSize(w
 ## Not yet
 
 - Materials are approximated: no refraction, light from emissive voxels, roughness, or clouds (`_media` draws as glass).
-- Spotlight picks up the importer after macOS rescans; on a Mac that had an older VoxLook, that can take until the next login.
 
 ## Contributing
 

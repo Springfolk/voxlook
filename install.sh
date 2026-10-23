@@ -13,6 +13,8 @@ set -euo pipefail
 REPO="Springfolk/voxlook"
 URL="https://github.com/$REPO/releases/latest/download/VoxLook.zip"
 LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+# Spotlight is slow to find importers inside apps; one linked here is picked up at once.
+SPOTLIGHT_LINK="$HOME/Library/Spotlight/VoxLook.mdimporter"
 
 from="" uninstall=0 restart_finder=1
 while [ $# -gt 0 ]; do
@@ -43,6 +45,8 @@ unregister() {
   pluginkit -r "$app/Contents/PlugIns/VoxLookPreview.appex" 2>/dev/null || true
   pluginkit -r "$app/Contents/PlugIns/VoxLookThumbnail.appex" 2>/dev/null || true
   "$LSREGISTER" -u "$app" 2>/dev/null || true
+  [ -L "$SPOTLIGHT_LINK" ] && rm -f "$SPOTLIGHT_LINK"
+  return 0
 }
 
 refresh_quick_look() {
@@ -94,10 +98,12 @@ pluginkit -a "$app/Contents/PlugIns/VoxLookThumbnail.appex"
 pluginkit -e use -i co.springfolk.voxlook.preview
 pluginkit -e use -i co.springfolk.voxlook.thumbnail
 importer="$app/Contents/Library/Spotlight/VoxLook.mdimporter"
-if [ -d "$importer" ]; then
+if [ -d "$importer" ] && { [ ! -e "$SPOTLIGHT_LINK" ] || [ -L "$SPOTLIGHT_LINK" ]; }; then
+  mkdir -p "$(dirname "$SPOTLIGHT_LINK")"
+  ln -sfn "$importer" "$SPOTLIGHT_LINK"
   # Spotlight runs a new importer only on files that change; reindex existing .vox files now.
   say "Indexing existing .vox files for Spotlight"
-  mdimport -r "$importer" >/dev/null 2>&1 || true
+  mdimport -r "$SPOTLIGHT_LINK" >/dev/null 2>&1 || true
 fi
 refresh_quick_look
 
