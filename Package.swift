@@ -15,7 +15,7 @@ let package = Package(
         // SceneKit scene building and offscreen rendering.
         .target(name: "VoxRender", dependencies: ["VoxKit"]),
         // CLI: render a .vox to PNG (same code path as Finder thumbnails).
-        .executableTarget(name: "voxthumb", dependencies: ["VoxRender"]),
+        .executableTarget(name: "voxthumb", dependencies: ["VoxKit", "VoxRender"]),
         .testTarget(name: "VoxKitTests", dependencies: ["VoxKit", "VoxRender"]),
     ]
 )

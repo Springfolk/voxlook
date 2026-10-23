@@ -8,3 +8,4 @@ ThumbnailExtension/Info.plist
 Config/Local.xcconfig
 .swiftpm/
 Config/Sandbox.entitlements
+SpotlightImporter/Info.plist

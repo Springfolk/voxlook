@@ -10,10 +10,12 @@ Finder thumbnails, and a 3D preview you can spin when you press Space.</p>
 ## What it does
 
 - **Thumbnails.** Finder icons, column view and Get Info show the model itself, not a blank document.
-- **Space-bar preview.** An orbitable 3D view with the model's size and voxel count. Drag to turn it, scroll or pinch to zoom.
+- **Space-bar preview.** An orbitable 3D view with the model's size, voxel count and palette. Drag to turn it, scroll or pinch to zoom, double-click to reset. Animated files get a play button; files with layers get a menu to show or hide each one, hidden layers included.
+- **Shading and materials.** Corners and creases get ambient occlusion. Emissive voxels glow, metal has a highlight, and glass is see-through.
+- **Spotlight.** Finds `.vox` files by object and layer names and shows their size and voxel count as the description.
 - **Whole scenes.** It reads MagicaVoxel's scene graph: multiple models, groups, rotations, mirroring and the palette. Hidden layers and hidden objects are left out.
-- **Light on the battery.** The preview redraws only while you drag it and uses no CPU while it sits open. Thumbnails render on the low-power GPU, and Quick Look caches them. Thumbnailing 306 real-world files took 2.3 s of CPU in total and 134 MB at peak. Models are greedy-meshed, with only their occupied voxels stored, and each model is meshed once however many times it's placed.
-- **Sandboxed.** Both extensions only read the file they're given.
+- **Light on the battery.** The preview redraws only while you drag it or play an animation, and uses no CPU while it sits open. Thumbnails render on the low-power GPU, and Quick Look caches them. Ambient occlusion is baked in when a model is meshed, so drawing costs nothing extra. Rendering 93 real-world files takes 0.7 s of CPU in total (`voxthumb --bench`). Models are greedy-meshed, with only their occupied voxels stored, and each model is meshed once however many times it's placed.
+- **Sandboxed.** The Quick Look extensions only read the file they're given.
 
 Requires macOS 14 or later.
 
@@ -23,7 +25,7 @@ Requires macOS 14 or later.
 curl -fsSL https://raw.githubusercontent.com/Springfolk/voxlook/main/install.sh | bash
 ```
 
-This downloads the latest release (universal, ~750 KB) into `/Applications`, or `~/Applications` if you can't write there. It registers both extensions, clears Quick Look's caches and relaunches Finder so files that already had a plain icon pick up their thumbnails. Run it again to update. To remove VoxLook:
+This downloads the latest release (universal, ~1.4 MB) into `/Applications`, or `~/Applications` if you can't write there. It registers the extensions and the Spotlight importer, clears Quick Look's caches and relaunches Finder so files that already had a plain icon pick up their thumbnails. Run it again to update. To remove VoxLook:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/Springfolk/voxlook/main/install.sh | bash -s -- --uninstall
@@ -47,6 +49,7 @@ CODE_SIGN_STYLE = Automatic
 
 ```sh
 swift run -c release voxthumb model.vox model.png 1024
+swift run -c release voxthumb --bench 256 *.vox   # CPU time, triangles, peak memory
 ```
 
 ## Using the library
@@ -59,14 +62,14 @@ The package exposes `VoxKit` (parser, scene graph, mesher; Foundation only) and 
 
 ```swift
 let file = try VoxFile(contentsOf: url)
-let mesh = file.models[0].mesh(palette: file.palette)   // positions, normals, colours, indices
+let mesh = file.models[0].mesh(palette: file.palette, surfaces: file.surfaces)   // positions, normals, colours (AO baked), indices, parts
 let image = try VoxThumbnailRenderer.render(contentsOf: url, pixelSize: CGSize(width: 512, height: 512))
 ```
 
 ## Not yet
 
-- Materials (glass, emission, metal) are drawn as plain colour.
-- Animations show their first frame.
+- Materials are approximated: no refraction, light from emissive voxels, roughness, or clouds (`_media` draws as glass).
+- Spotlight picks up the importer after macOS rescans; on a Mac that had an older VoxLook, that can take until the next login.
 
 ## Contributing
 

@@ -24,8 +24,12 @@ struct VoxWriter {
     }
 
     mutating func transform(id: Int, child: Int, layer: Int = 0, frame: [String: String] = [:]) {
-        chunk("nTRN", Self.int32(id) + Self.dict([:]) + Self.int32(child) + Self.int32(-1)
-            + Self.int32(layer) + Self.int32(1) + Self.dict(frame))
+        transform(id: id, child: child, layer: layer, frames: [frame])
+    }
+
+    mutating func transform(id: Int, child: Int, layer: Int = 0, name: String? = nil, frames: [[String: String]]) {
+        chunk("nTRN", Self.int32(id) + Self.dict(name.map { ["_name": $0] } ?? [:]) + Self.int32(child) + Self.int32(-1)
+            + Self.int32(layer) + Self.int32(frames.count) + frames.reduce(Data()) { $0 + Self.dict($1) })
     }
 
     mutating func group(id: Int, children: [Int]) {
@@ -34,6 +38,21 @@ struct VoxWriter {
 
     mutating func shape(id: Int, model: Int) {
         chunk("nSHP", Self.int32(id) + Self.dict([:]) + Self.int32(1) + Self.int32(model) + Self.dict([:]))
+    }
+
+    /// An animated shape: `(model, first frame)` pairs.
+    mutating func shape(id: Int, frames: [(model: Int, frame: Int)]) {
+        chunk("nSHP", frames.reduce(Self.int32(id) + Self.dict([:]) + Self.int32(frames.count)) {
+            $0 + Self.int32($1.model) + Self.dict(["_f": String($1.frame)])
+        })
+    }
+
+    mutating func material(_ index: Int, _ attributes: [String: String]) {
+        chunk("MATL", Self.int32(index) + Self.dict(attributes))
+    }
+
+    mutating func layer(_ id: Int, name: String, hidden: Bool = false) {
+        chunk("LAYR", Self.int32(id) + Self.dict(["_name": name, "_hidden": hidden ? "1" : "0"]) + Self.int32(-1))
     }
 
     var data: Data {

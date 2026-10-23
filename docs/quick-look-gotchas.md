@@ -9,4 +9,12 @@
 - **`QLThumbnailReply(contextSize:drawing:)`** hands a pixel-sized `CGContext` with no scale transform: draw into `context.width × context.height`.
 - **SceneKit byte colours aren't normalised.** A `UInt8` `.color` source reads as 0–255 → everything saturates; use floats.
 - **XcodeGen overwrites entitlement files**: list the keys under `entitlements.properties` in `project.yml`.
+- **SceneKit takes half floats** (`bytesPerComponent: 2`, float components): pixel-identical, half the memory.
 - In zsh, `log` is a builtin; use `/usr/bin/log show|stream`.
+
+## Spotlight
+
+- **`CSImportExtension` (`com.apple.spotlight.import`) is a no-op on macOS** (Apple docs + DTS); it registers but `update` is never called. Use a classic `.mdimporter` in `Contents/Library/Spotlight`.
+- **XcodeGen `bundle` targets get no `CFBundleExecutable`**; without it the importer silently never loads. It's set in `project.yml`.
+- **`mdimport -t -d2 file.vox`** tests it ("with plugIn …" + attributes); **`mdimport -L`** lists known importers.
+- **mds discovers app-embedded importers lazily and caches them** (one path per bundle ID, kept after the file's deleted). Two registered copies of the app (e.g. the Xcode build product) can win over `/Applications`; `make install` unregisters the build product.

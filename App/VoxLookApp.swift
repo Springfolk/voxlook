@@ -83,7 +83,7 @@ struct ContentView: View {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         do {
-            scene = VoxScene(file: try VoxFile(contentsOf: url))
+            scene = VoxScene(file: try VoxFile(contentsOf: url), interactive: true)
             fileName = url.lastPathComponent
             error = nil
         } catch {

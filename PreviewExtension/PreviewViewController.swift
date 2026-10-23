@@ -12,7 +12,7 @@ final class PreviewViewController: NSViewController, QLPreviewingController {
 
     func preparePreviewOfFile(at url: URL) async throws {
         let voxScene = try await Task.detached(priority: .userInitiated) {
-            VoxScene(file: try VoxFile(contentsOf: url))
+            VoxScene(file: try VoxFile(contentsOf: url), interactive: true)
         }.value
         let preview = VoxPreviewView(scene: voxScene)
         preview.frame = view.bounds

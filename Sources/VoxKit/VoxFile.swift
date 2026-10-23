@@ -31,7 +31,7 @@ public struct VoxModel: Sendable {
     }
 
     /// Fills from packed `XYZI` records, dropping out-of-bounds voxels and
-    /// storing only their bounding box.
+    /// storing only their bounding box (at most 256³: coordinates are bytes).
     init(sizeX: Int, sizeY: Int, sizeZ: Int, xyzi: UnsafeBufferPointer<UInt8>) {
         self.sizeX = sizeX; self.sizeY = sizeY; self.sizeZ = sizeZ
         var lo = SIMD3(sizeX, sizeY, sizeZ), hi = SIMD3<Int>(repeating: -1)
@@ -87,7 +87,15 @@ public struct VoxModel: Sendable {
 public enum VoxNode: Sendable {
     case transform(VoxTransformNode)
     case group(children: [Int])
+    /// Several ids are animation frames; `VoxFile.shapeFrames` says which.
     case shape(modelIDs: [Int])
+}
+
+/// One animation key of a transform node. Keys hold until the next one.
+public struct VoxTransformKey: Sendable {
+    public var frame: Int
+    public var rotation: VoxRotation
+    public var translation: SIMD3<Int32>
 }
 
 public struct VoxTransformNode: Sendable {
@@ -95,8 +103,11 @@ public struct VoxTransformNode: Sendable {
     public var hidden: Bool
     public var child: Int
     public var layer: Int
+    /// The first key's rotation and translation.
     public var rotation: VoxRotation
     public var translation: SIMD3<Int32>
+    /// Every key, sorted by frame; one entry for a still transform.
+    public var keys: [VoxTransformKey] = []
 }
 
 public struct VoxLayer: Sendable {
@@ -112,8 +123,27 @@ public struct VoxFile: Sendable {
     public var palette: [VoxColor] = VoxPalette.default
     public var nodes: [Int: VoxNode] = [:]
     public var layers: [Int: VoxLayer] = [:]
+    /// Materials by palette index; indices without one are diffuse.
+    public var materials: [Int: VoxMaterial] = [:]
+    /// For animated `nSHP` nodes: the frame each of its model ids starts at.
+    public var shapeFrames: [Int: [Int]] = [:]
 
     public init(version: Int) { self.version = version }
+
+    /// Number of animation frames; 1 for a still scene.
+    public var frameCount: Int {
+        var last = 0
+        for case .transform(let t) in nodes.values { last = max(last, t.keys.last?.frame ?? 0) }
+        for frames in shapeFrames.values { last = max(last, frames.max() ?? 0) }
+        return last + 1
+    }
+
+    /// The surface of every palette index (index 0 is empty and reads as diffuse).
+    public var surfaces: [VoxSurface] {
+        var out = [VoxSurface](repeating: .diffuse, count: 256)
+        for (i, m) in materials where out.indices.contains(i) { out[i] = m.surface }
+        return out
+    }
 }
 
 public enum VoxError: Error, Equatable, CustomStringConvertible {

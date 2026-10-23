@@ -93,6 +93,12 @@ pluginkit -a "$app/Contents/PlugIns/VoxLookPreview.appex"
 pluginkit -a "$app/Contents/PlugIns/VoxLookThumbnail.appex"
 pluginkit -e use -i co.springfolk.voxlook.preview
 pluginkit -e use -i co.springfolk.voxlook.thumbnail
+importer="$app/Contents/Library/Spotlight/VoxLook.mdimporter"
+if [ -d "$importer" ]; then
+  # Spotlight runs a new importer only on files that change; reindex existing .vox files now.
+  say "Indexing existing .vox files for Spotlight"
+  mdimport -r "$importer" >/dev/null 2>&1 || true
+fi
 refresh_quick_look
 
 pluginkit -m -i co.springfolk.voxlook.thumbnail | grep -q voxlook || die "the thumbnail extension didn't register; open $app once and try again."

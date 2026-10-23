@@ -14,8 +14,8 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.1.0"
-    CURRENT_PROJECT_VERSION: "2"
+    MARKETING_VERSION: "1.2.0"
+    CURRENT_PROJECT_VERSION: "3"
     ENABLE_HARDENED_RUNTIME: YES
     DEAD_CODE_STRIPPING: YES
 
@@ -30,6 +30,10 @@ targets:
         product: VoxRender
       - target: VoxLookPreview
       - target: VoxLookThumbnail
+      - target: VoxLookSpotlight
+        copy:
+          destination: wrapper
+          subpath: Contents/Library/Spotlight
     entitlements:
       path: Config/Sandbox.entitlements
       properties: &sandbox
@@ -117,3 +121,36 @@ targets:
           NSExtensionAttributes:
             QLSupportedContentTypes: [com.ephtracy.vox]
             QLThumbnailMinimumDimension: 16
+
+  # Classic Spotlight importer: macOS ignores CSImportExtension.
+  VoxLookSpotlight:
+    type: bundle
+    platform: macOS
+    sources:
+      - SpotlightImporter
+    dependencies:
+      - package: VoxLook
+        product: VoxKit
+    settings:
+      base:
+        PRODUCT_NAME: VoxLook
+        PRODUCT_MODULE_NAME: VoxLookSpotlight
+        PRODUCT_BUNDLE_IDENTIFIER: co.springfolk.voxlook.spotlight
+        WRAPPER_EXTENSION: mdimporter
+        INSTALL_PATH: /Library/Spotlight
+        SKIP_INSTALL: YES
+    info:
+      path: SpotlightImporter/Info.plist
+      properties:
+        CFBundleDisplayName: VoxLook Spotlight
+        CFBundleExecutable: $(EXECUTABLE_NAME)
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDocumentTypes:
+          - CFBundleTypeRole: MDImporter
+            LSItemContentTypes: [com.ephtracy.vox]
+        CFPlugInDynamicRegistration: "NO"
+        CFPlugInFactories:
+          4B519B9F-BA7B-44CE-8AFE-E064CF56F6B6: VoxLookImporterFactory
+        CFPlugInTypes:
+          8B08C4BF-415B-11D8-B3F9-0003936726FC: [4B519B9F-BA7B-44CE-8AFE-E064CF56F6B6]  # kMDImporterTypeID

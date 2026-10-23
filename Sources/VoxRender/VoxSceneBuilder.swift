@@ -1,16 +1,34 @@
+import Accelerate
 import Foundation
 import SceneKit
 import VoxKit
 
 /// A ready-to-render SceneKit scene for a `.vox` file.
 public struct VoxScene {
+    /// A MagicaVoxel layer that has models in it.
+    public struct Layer: Sendable {
+        public let id: Int
+        public let name: String
+        /// Shown when the scene opens (MagicaVoxel's own visibility).
+        public let initiallyVisible: Bool
+    }
+
     public let scene: SCNScene
-    /// World bounds in SceneKit coordinates (Y up).
+    /// World bounds in SceneKit coordinates (Y up), of what shows when the scene opens.
     public let boundsMin: SIMD3<Float>
     public let boundsMax: SIMD3<Float>
     public let voxelCount: Int
     public let triangleCount: Int
     public let instanceCount: Int
+    /// Animation frames built into the scene; 1 unless `interactive`.
+    public let frameCount: Int
+    /// Layers with models, for toggling; empty unless `interactive` and there are two or more.
+    public let layers: [Layer]
+    /// Colours in use, most voxels first; empty unless `interactive`.
+    public let usedColors: [VoxColor]
+
+    private let frameNodes: [SCNNode]
+    private let layerNodes: [Int: [SCNNode]]
 
     public var size: SIMD3<Float> { boundsMax - boundsMin }
     public var center: SIMD3<Float> { (boundsMin + boundsMax) / 2 }
@@ -20,78 +38,107 @@ public struct VoxScene {
         (Int(size.x.rounded()), Int(size.z.rounded()), Int(size.y.rounded()))
     }
 
-    public init(file: VoxFile) {
+    /// - Parameter interactive: also build every animation frame and hidden
+    ///   layer (hidden for now) and count colours, for the preview. Thumbnails
+    ///   leave it off and mesh only what frame 0 shows.
+    public init(file: VoxFile, interactive: Bool = false) {
         let scene = SCNScene()
         // MagicaVoxel is Z up; SceneKit is Y up.
         let world = SCNNode()
         world.eulerAngles.x = -.pi / 2
         scene.rootNode.addChildNode(world)
 
+        let surfaces = file.surfaces
         var palette = file.palette
-        for i in palette.indices { palette[i].a = 255 }  // glass etc. isn't modelled; keep everything opaque
+        for i in palette.indices {
+            // Glass shows through; everything else is drawn opaque.
+            let glass = surfaces[i] == .glass ? file.materials[i]?.transparency ?? 0 : 0
+            palette[i].a = UInt8(255 * max(0.2, 1 - 0.8 * glass))
+        }
+        let materials = Self.materials(), mirrored = materials.map { m -> SCNMaterial in
+            let copy = m.copy() as! SCNMaterial
+            copy.isDoubleSided = true  // reflections flip winding
+            return copy
+        }
 
-        let material = SCNMaterial()
-        material.lightingModel = .lambert
-        material.diffuse.contents = NSColor.white  // multiplied by the vertex colours
-        let mirrored = material.copy() as! SCNMaterial
-        mirrored.isDoubleSided = true  // reflections flip winding
-
-        var geometries: [Int: (geometry: SCNGeometry, lo: SIMD3<Float>, hi: SIMD3<Float>)] = [:]
-        var mirroredGeometries: [Int: SCNGeometry] = [:]
-        var lo = SIMD3<Float>(repeating: .infinity), hi = SIMD3<Float>(repeating: -.infinity)
-        var voxels = 0, triangles = 0
-
-        let instances = file.instances()
-        for inst in instances {
-            let model = file.models[inst.modelIndex]
-            guard model.voxelCount > 0 else { continue }
-            let entry: (geometry: SCNGeometry, lo: SIMD3<Float>, hi: SIMD3<Float>)
-            if let e = geometries[inst.modelIndex] {
-                entry = e
-            } else {
-                let mesh = model.mesh(palette: palette)
+        var geometries: [Int: (plain: SCNGeometry, mirrored: SCNGeometry?)] = [:]
+        func geometry(_ modelIndex: Int, mirror: Bool) -> SCNGeometry {
+            var entry = geometries[modelIndex] ?? {
+                let mesh = file.models[modelIndex].mesh(palette: palette, surfaces: surfaces)
                 let g = Self.geometry(from: mesh)
-                g.firstMaterial = material
-                // Tight bounds of the voxels, not the model box.
-                var mlo = SIMD3<Float>(repeating: .infinity), mhi = -mlo
-                mesh.positions.withUnsafeBufferPointer { p in
-                    for i in Swift.stride(from: 0, to: p.count, by: 3) {
-                        let v = SIMD3(p[i], p[i + 1], p[i + 2])
-                        mlo = simd_min(mlo, v); mhi = simd_max(mhi, v)
-                    }
-                }
-                entry = (g, mlo, mhi)
-                geometries[inst.modelIndex] = entry
+                g.materials = mesh.parts.map { materials[$0.surface.rawValue] }
+                return (g, nil)
+            }()
+            if mirror && entry.mirrored == nil {
+                let g = entry.plain.copy() as! SCNGeometry  // shares vertex buffers
+                g.materials = entry.plain.materials.map { mirrored[materials.firstIndex(of: $0)!] }
+                entry.mirrored = g
             }
-            let geometry = entry.geometry
-            let isMirror = Self.determinant(inst.rotation) < 0
-            let node = SCNNode(geometry: isMirror ? {
-                if let g = mirroredGeometries[inst.modelIndex] { return g }
-                let g = geometry.copy() as! SCNGeometry  // shares vertex buffers
-                g.firstMaterial = mirrored
-                mirroredGeometries[inst.modelIndex] = g
-                return g
-            }() : geometry)
-            node.simdTransform = Self.matrix(inst.rotation, inst.translation)
-            world.addChildNode(node)
+            geometries[modelIndex] = entry
+            return mirror ? entry.mirrored! : entry.plain
+        }
 
-            voxels += model.voxelCount
-            triangles += geometry.elements.first?.primitiveCount ?? 0
-            for corner in 0..<8 {
-                let local = SIMD3(corner & 1 == 0 ? entry.lo.x : entry.hi.x,
-                                  corner & 2 == 0 ? entry.lo.y : entry.hi.y,
-                                  corner & 4 == 0 ? entry.lo.z : entry.hi.z)
-                let w = inst.rotation.apply(local) + inst.translation
-                let p = SIMD3(w.x, w.z, -w.y)  // Z-up → Y-up
-                lo = simd_min(lo, p); hi = simd_max(hi, p)
+        let frameCount = interactive ? file.frameCount : 1
+        var frameNodes: [SCNNode] = [], layerNodes: [Int: [SCNNode]] = [:]
+        var firstFrame: [VoxInstance] = []
+        for f in 0..<frameCount {
+            let container = SCNNode()
+            container.isHidden = f != 0
+            world.addChildNode(container)
+            frameNodes.append(container)
+            for inst in file.instances(frame: f, includeHiddenLayers: interactive) {
+                guard file.models[inst.modelIndex].voxelCount > 0 else { continue }
+                let hidden = file.layers[inst.layer]?.hidden == true
+                if f == 0 && !hidden { firstFrame.append(inst) }
+                let node = SCNNode(geometry: geometry(inst.modelIndex, mirror: Self.determinant(inst.rotation) < 0))
+                node.simdTransform = Self.matrix(inst.rotation, inst.translation)
+                node.isHidden = hidden
+                container.addChildNode(node)
+                layerNodes[inst.layer, default: []].append(node)
             }
         }
-        if voxels == 0 { lo = .zero; hi = .zero }
+
+        // Bounds of the occupied voxels, Z-up → Y-up: (x, y, z) → (x, z, −y).
+        let (lo, hi) = file.bounds(of: firstFrame).map {
+            (SIMD3($0.min.x, $0.min.z, -$0.max.y), SIMD3($0.max.x, $0.max.z, -$0.min.y))
+        } ?? (.zero, .zero)
 
         Self.addLights(to: scene)
         self.scene = scene
         boundsMin = lo; boundsMax = hi
-        voxelCount = voxels; triangleCount = triangles; instanceCount = instances.count
+        voxelCount = firstFrame.reduce(0) { $0 + file.models[$1.modelIndex].voxelCount }
+        triangleCount = firstFrame.reduce(0) { $0 + (geometries[$1.modelIndex]?.plain.elements.reduce(0) { $0 + $1.primitiveCount } ?? 0) }
+        instanceCount = firstFrame.count
+        self.frameCount = frameCount
+        self.frameNodes = frameNodes
+        self.layerNodes = layerNodes
+        let layerIDs = layerNodes.keys.filter { $0 >= 0 }.sorted()
+        layers = interactive && layerIDs.count > 1 ? layerIDs.map {
+            // MagicaVoxel names untouched layers "0", "1", …
+            let name = file.layers[$0]?.name.flatMap { Int($0) == nil ? $0 : nil } ?? "Layer \($0)"
+            return Layer(id: $0, name: name, initiallyVisible: file.layers[$0]?.hidden != true)
+        } : []
+        usedColors = interactive ? Self.colorsByUse(file, firstFrame) : []
+    }
+
+    /// Shows animation frame `frame` (wrapping) and hides the rest.
+    public func showFrame(_ frame: Int) {
+        guard frameNodes.count > 1 else { return }
+        let f = (frame % frameNodes.count + frameNodes.count) % frameNodes.count
+        for (i, node) in frameNodes.enumerated() where node.isHidden != (i != f) { node.isHidden = i != f }
+    }
+
+    /// Shows or hides every model on `layer`, in every frame.
+    public func setLayer(_ layer: Int, visible: Bool) {
+        for node in layerNodes[layer] ?? [] { node.isHidden = !visible }
+    }
+
+    private static func colorsByUse(_ file: VoxFile, _ instances: [VoxInstance]) -> [VoxColor] {
+        var counts = [Int](repeating: 0, count: 256)
+        for m in Set(instances.map(\.modelIndex)) {
+            for c in file.models[m].cells where c != 0 { counts[Int(c)] += 1 }
+        }
+        return (1..<256).filter { counts[$0] > 0 }.sorted { counts[$0] > counts[$1] }.map { file.palette[$0] }
     }
 
     /// Positions an orbit camera so the whole model fits.
@@ -134,31 +181,77 @@ public struct VoxScene {
 
     // MARK: - Building blocks
 
+    /// One per `VoxSurface`, in its order. Lambert/Blinn and unlit: no PBR, no shadows.
+    static func materials() -> [SCNMaterial] {
+        VoxSurface.allCases.map { surface in
+            let m = SCNMaterial()
+            m.diffuse.contents = NSColor.white  // multiplied by the vertex colours
+            switch surface {
+            case .diffuse:
+                m.lightingModel = .lambert
+            case .metal:
+                m.lightingModel = .blinn
+                m.specular.contents = NSColor(white: 0.55, alpha: 1)
+                m.shininess = 0.35
+            case .emissive:
+                m.lightingModel = .constant  // full colour regardless of light: it glows
+            case .glass:
+                m.lightingModel = .blinn
+                m.specular.contents = NSColor(white: 0.4, alpha: 1)
+                m.blendMode = .alpha
+                m.writesToDepthBuffer = false  // what's behind it still draws
+            }
+            return m
+        }
+    }
+
     static func geometry(from mesh: VoxMesh) -> SCNGeometry {
         let n = mesh.vertexCount
-        let positions = mesh.positions.withUnsafeBytes { Data($0) }
-        let normals = mesh.normals.withUnsafeBytes { Data($0) }
-        // SceneKit doesn't normalise byte colours, so widen to floats.
-        let colors = mesh.colors.map { Float($0) / 255 }.withUnsafeBytes { Data($0) }
+        // Half floats: exact for voxel coordinates up to ±1024 in steps of 0.5, and
+        // half the memory. SceneKit doesn't normalise byte colours, so those widen too.
+        // vImage converts on Intel too (Swift's Float16 is arm64-only on macOS).
+        func source<T>(_ values: [T], _ semantic: SCNGeometrySource.Semantic, components: Int,
+                       _ convert: (UnsafePointer<vImage_Buffer>, UnsafePointer<vImage_Buffer>) -> vImage_Error)
+            -> SCNGeometrySource {
+            var data = Data(count: values.count * 2)
+            values.withUnsafeBufferPointer { src in
+                data.withUnsafeMutableBytes { dst in
+                    let s = vImage_Buffer(data: UnsafeMutableRawPointer(mutating: src.baseAddress), height: 1,
+                                          width: vImagePixelCount(src.count), rowBytes: src.count * MemoryLayout<T>.size)
+                    let d = vImage_Buffer(data: dst.baseAddress, height: 1, width: vImagePixelCount(src.count),
+                                          rowBytes: src.count * 2)
+                    _ = withUnsafePointer(to: s) { s in withUnsafePointer(to: d) { d in convert(s, d) } }
+                }
+            }
+            return SCNGeometrySource(data: data, semantic: semantic, vectorCount: n, usesFloatComponents: true,
+                                     componentsPerVector: components, bytesPerComponent: 2, dataOffset: 0,
+                                     dataStride: 2 * components)
+        }
+        let float = { vImageConvert_PlanarFtoPlanar16F($0, $1, vImage_Flags(kvImageNoFlags)) }
         let sources = [
-            SCNGeometrySource(data: positions, semantic: .vertex, vectorCount: n, usesFloatComponents: true,
-                              componentsPerVector: 3, bytesPerComponent: 4, dataOffset: 0, dataStride: 12),
-            SCNGeometrySource(data: normals, semantic: .normal, vectorCount: n, usesFloatComponents: true,
-                              componentsPerVector: 3, bytesPerComponent: 4, dataOffset: 0, dataStride: 12),
-            SCNGeometrySource(data: colors, semantic: .color, vectorCount: n, usesFloatComponents: true,
-                              componentsPerVector: 4, bytesPerComponent: 4, dataOffset: 0, dataStride: 16),
+            source(mesh.positions, .vertex, components: 3, float),
+            source(mesh.normals, .normal, components: 3, float),
+            // 0…255 → 0…1.
+            source(mesh.colors, .color, components: 4) { vImageConvert_Planar8toPlanar16F($0, $1, vImage_Flags(kvImageNoFlags)) },
         ]
         // 16-bit indices halve index memory for the common small model.
-        let element: SCNGeometryElement
-        if n <= Int(UInt16.max) {
-            let small = mesh.indices.map { UInt16($0) }
-            element = SCNGeometryElement(data: small.withUnsafeBytes { Data($0) }, primitiveType: .triangles,
-                                         primitiveCount: mesh.triangleCount, bytesPerIndex: 2)
-        } else {
-            element = SCNGeometryElement(data: mesh.indices.withUnsafeBytes { Data($0) }, primitiveType: .triangles,
-                                         primitiveCount: mesh.triangleCount, bytesPerIndex: 4)
+        let small = n <= Int(UInt16.max)
+        let elements = mesh.parts.map { part -> SCNGeometryElement in
+            let data: Data
+            if small {
+                var d = Data(count: part.indices.count * 2)
+                d.withUnsafeMutableBytes { raw in
+                    let out = raw.bindMemory(to: UInt16.self)
+                    for (o, i) in part.indices.enumerated() { out[o] = UInt16(truncatingIfNeeded: mesh.indices[i]) }
+                }
+                data = d
+            } else {
+                data = mesh.indices[part.indices].withUnsafeBytes { Data($0) }
+            }
+            return SCNGeometryElement(data: data, primitiveType: .triangles, primitiveCount: part.triangleCount,
+                                      bytesPerIndex: small ? 2 : 4)
         }
-        return SCNGeometry(sources: sources, elements: [element])
+        return SCNGeometry(sources: sources, elements: elements)
     }
 
     static func matrix(_ r: VoxRotation, _ t: SIMD3<Float>) -> simd_float4x4 {
